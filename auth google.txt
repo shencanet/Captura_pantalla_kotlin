@@ -1,0 +1,178 @@
+https://firebase.google.com/docs/auth/android/google-signin?hl=es
+
+
+    Firebase
+    Documentación de Firebase
+    Authentication
+    Construir
+
+¿Te ha resultado útil?
+Autenticarse con Google en Android
+
+Puede permitir que sus usuarios se autentiquen con Firebase utilizando sus cuentas de Google.
+Antes de que empieces
+
+Si aún no lo has hecho, agrega Firebase a tu proyecto de Android .
+
+En el archivo Gradle de su módulo (nivel de aplicación) (generalmente <project>/<app-module>/build.gradle.kts o <project>/<app-module>/build.gradle ), agregue la dependencia para la autenticación de Firebase. biblioteca para Android. Recomendamos utilizar Firebase Android BoM para controlar el control de versiones de la biblioteca.
+
+Además, como parte de la configuración de la autenticación de Firebase, debes agregar el SDK de servicios de Google Play a tu aplicación.
+
+    dependencies {
+        // Import the BoM for the Firebase platform
+        implementation(platform("com.google.firebase:firebase-bom:32.8.0"))
+
+        // Add the dependency for the Firebase Authentication library
+        // When using the BoM, you don't specify versions in Firebase library dependencies
+        implementation("com.google.firebase:firebase-auth")
+
+        // Also add the dependency for the Google Play services library and specify its version
+        implementation("com.google.android.gms:play-services-auth:21.0.0")
+    }
+
+    Al usar Firebase Android BoM , su aplicación siempre usará versiones compatibles de las bibliotecas de Firebase Android.
+
+    (Alternativa)
+    Agregue dependencias de la biblioteca de Firebase
+    sin
+    usar la BoM
+    ¿Busca un módulo de biblioteca específico de Kotlin? A partir de octubre de 2023 (Firebase BoM 32.5.0) , tanto los desarrolladores de Kotlin como los de Java podrán depender del módulo de biblioteca principal (para más detalles, consulte las preguntas frecuentes sobre esta iniciativa ).
+
+    Si aún no ha especificado la huella digital SHA de su aplicación, hágalo desde la página Configuración de Firebase console. Consulte Autenticar a su cliente para obtener detalles sobre cómo obtener la huella digital SHA de su aplicación.
+    Habilite Google como método de inicio de sesión en Firebase console:
+        En Firebase console , abre la sección Auth .
+        En la pestaña Método de inicio de sesión , habilite el método de inicio de sesión de Google y haga clic en Guardar .
+
+    Cuando se le solicite en la consola, descargue el archivo de configuración de Firebase actualizado ( google-services.json ), que ahora contiene la información del cliente OAuth necesaria para iniciar sesión en Google.
+
+    Mueva este archivo de configuración actualizado a su proyecto de Android Studio, reemplazando el archivo de configuración correspondiente ahora obsoleto. (Consulta Agregar Firebase a tu proyecto de Android ).
+
+Autenticar con Firebase
+Integre el inicio de sesión de Google One Tap en su aplicación siguiendo los pasos de la página Iniciar sesión de los usuarios con sus credenciales guardadas . Cuando configura el objeto BeginSignInRequest , llame a setGoogleIdTokenRequestOptions :
+Kotlin+KTX
+Java
+
+signInRequest = BeginSignInRequest.builder()
+            .setGoogleIdTokenRequestOptions(
+                BeginSignInRequest.GoogleIdTokenRequestOptions.builder()
+                    .setSupported(true)
+                    // Your server's client ID, not your Android client ID.
+                    .setServerClientId(getString(R.string.your_web_client_id))
+                    // Only show accounts previously used to sign in.
+                    .setFilterByAuthorizedAccounts(true)
+                    .build())
+            .build()
+
+Debe pasar su ID de cliente "servidor" al método setGoogleIdTokenRequestOptions . Para encontrar el ID del cliente OAuth 2.0:
+
+    Abra la página Credenciales en GCP Console.
+    El ID de cliente del tipo de aplicación web es el ID de cliente OAuth 2.0 de su servidor backend.
+
+Después de integrar el inicio de sesión de Google, su actividad de inicio de sesión tiene un código similar al siguiente:
+Kotlin+KTX
+Java
+
+class YourActivity : AppCompatActivity() {
+
+    // ...
+    private val REQ_ONE_TAP = 2  // Can be any integer unique to the Activity
+    private var showOneTapUI = true
+    // ...
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        when (requestCode) {
+             REQ_ONE_TAP -> {
+                try {
+                    val credential = oneTapClient.getSignInCredentialFromIntent(data)
+                    val idToken = credential.googleIdToken
+                    when {
+                        idToken != null -> {
+                            // Got an ID token from Google. Use it to authenticate
+                            // with Firebase.
+                            Log.d(TAG, "Got ID token.")
+                        }
+                        else -> {
+                            // Shouldn't happen.
+                            Log.d(TAG, "No ID token!")
+                        }
+                    }
+                } catch (e: ApiException) {
+                    // ...
+            }
+        }
+    }
+    // ...
+}
+
+En el método onCreate de tu actividad de inicio de sesión, obtén la instancia compartida del objeto FirebaseAuth :
+Kotlin+KTX
+Java
+
+private lateinit var auth: FirebaseAuth
+// ...
+// Initialize Firebase Auth
+auth = Firebase.auth
+
+Al inicializar su Actividad, verifique si el usuario ha iniciado sesión actualmente:
+Kotlin+KTX
+Java
+
+override fun onStart() {
+    super.onStart()
+    // Check if user is signed in (non-null) and update UI accordingly.
+    val currentUser = auth.currentUser
+    updateUI(currentUser)
+}
+
+En su controlador onActivityResult() (consulte el paso 1), obtenga el token de ID de Google del usuario, cámbielo por una credencial de Firebase y autentíquese con Firebase usando la credencial de Firebase:
+Kotlin+KTX
+Java
+
+    val googleCredential = oneTapClient.getSignInCredentialFromIntent(data)
+    val idToken = googleCredential.googleIdToken
+    when {
+        idToken != null -> {
+            // Got an ID token from Google. Use it to authenticate
+            // with Firebase.
+            val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
+            auth.signInWithCredential(firebaseCredential)
+                    .addOnCompleteListener(this) { task ->
+                        if (task.isSuccessful) {
+                            // Sign in success, update UI with the signed-in user's information
+                            Log.d(TAG, "signInWithCredential:success")
+                            val user = auth.currentUser
+                            updateUI(user)
+                        } else {
+                            // If sign in fails, display a message to the user.
+                            Log.w(TAG, "signInWithCredential:failure", task.exception)
+                            updateUI(null)
+                        }
+                    }
+        }
+        else -> {
+            // Shouldn't happen.
+            Log.d(TAG, "No ID token!")
+        }
+    }
+
+    Si la llamada a signInWithCredential tiene éxito, puede utilizar el método getCurrentUser para obtener los datos de la cuenta del usuario.
+
+Próximos pasos
+
+Después de que un usuario inicia sesión por primera vez, se crea una nueva cuenta de usuario y se vincula a las credenciales (es decir, el nombre de usuario y la contraseña, el número de teléfono o la información del proveedor de autenticación) con las que el usuario inició sesión. Esta nueva cuenta se almacena como parte de su proyecto de Firebase y se puede usar para identificar a un usuario en cada aplicación de su proyecto, independientemente de cómo inicie sesión el usuario.
+
+    En tus aplicaciones, puedes obtener la información básica del perfil del usuario desde el objeto FirebaseUser . Consulte Administrar usuarios .
+
+    En las reglas de seguridad de Firebase Realtime Database y Cloud Storage, puede obtener el ID de usuario único del usuario que inició sesión a partir de la variable auth y usarlo para controlar a qué datos puede acceder un usuario.
+
+Puede permitir que los usuarios inicien sesión en su aplicación utilizando múltiples proveedores de autenticación vinculando las credenciales del proveedor de autenticación a una cuenta de usuario existente.
+
+Para cerrar la sesión de un usuario, llame signOut :
+Kotlin+KTX
+Java
+
+Firebase.auth.signOut()
+
+https://github.com/firebase/snippets-android/blob/36ead7df6890f5888b44097b61ac6eb5f95e5f2f/auth/app/src/main/java/com/google/firebase/quickstart/auth/kotlin/MainActivity.kt#L415-L415

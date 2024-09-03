@@ -1,0 +1,139 @@
+https://firebase.google.com/docs/auth/android/facebook-login?hl=es
+
+
+    Firebase
+    Documentación de Firebase
+    Authentication
+    Construir
+
+¿Te ha resultado útil?
+Autenticar usando el inicio de sesión de Facebook en Android
+
+Puede permitir que sus usuarios se autentiquen con Firebase utilizando sus cuentas de Facebook integrando el inicio de sesión de Facebook en su aplicación.
+Antes de que empieces
+
+Si aún no lo has hecho, agrega Firebase a tu proyecto de Android .
+En el sitio de Facebook para desarrolladores , obtenga el ID de la aplicación y un secreto de aplicación para su aplicación.
+Habilitar inicio de sesión de Facebook:
+
+    En Firebase console , abre la sección Auth .
+    En la pestaña Método de inicio de sesión , habilite el método de inicio de sesión de Facebook y especifique el ID de la aplicación y el secreto de la aplicación que obtuvo de Facebook.
+    Luego, asegúrese de que su URI de redireccionamiento de OAuth (por ejemplo, my-app-12345.firebaseapp.com/__/auth/handler ) aparezca como uno de sus URI de redireccionamiento de OAuth en la página de configuración de su aplicación de Facebook en el sitio de Facebook para desarrolladores en el Producto . Configuración> Configuración de inicio de sesión de Facebook .
+
+En el archivo Gradle de su módulo (nivel de aplicación) (generalmente <project>/<app-module>/build.gradle.kts o <project>/<app-module>/build.gradle ), agregue la dependencia para la autenticación de Firebase. biblioteca para Android. Recomendamos utilizar Firebase Android BoM para controlar el control de versiones de la biblioteca.
+
+    dependencies {
+        // Import the BoM for the Firebase platform
+        implementation(platform("com.google.firebase:firebase-bom:32.8.0"))
+
+        // Add the dependency for the Firebase Authentication library
+        // When using the BoM, you don't specify versions in Firebase library dependencies
+        implementation("com.google.firebase:firebase-auth")
+    }
+
+    Al usar Firebase Android BoM , su aplicación siempre usará versiones compatibles de las bibliotecas de Firebase Android.
+
+    (Alternativa)
+    Agregue dependencias de la biblioteca de Firebase
+    sin
+    usar la BoM
+    ¿Busca un módulo de biblioteca específico de Kotlin? A partir de octubre de 2023 (Firebase BoM 32.5.0) , tanto los desarrolladores de Kotlin como los de Java podrán depender del módulo de biblioteca principal (para más detalles, consulte las preguntas frecuentes sobre esta iniciativa ).
+
+Autenticar con Firebase
+Integre el inicio de sesión de Facebook en su aplicación siguiendo la documentación del desarrollador . Cuando configure el objeto LoginButton o LoginManager , solicite los permisos public_profile y email . Si integró el inicio de sesión de Facebook usando LoginButton , su actividad de inicio de sesión tiene un código similar al siguiente:
+Kotlin+KTX
+Java
+
+// Initialize Facebook Login button
+callbackManager = CallbackManager.Factory.create()
+
+buttonFacebookLogin.setReadPermissions("email", "public_profile")
+buttonFacebookLogin.registerCallback(
+    callbackManager,
+    object : FacebookCallback<LoginResult> {
+        override fun onSuccess(loginResult: LoginResult) {
+            Log.d(TAG, "facebook:onSuccess:$loginResult")
+            handleFacebookAccessToken(loginResult.accessToken)
+        }
+
+        override fun onCancel() {
+            Log.d(TAG, "facebook:onCancel")
+        }
+
+        override fun onError(error: FacebookException) {
+            Log.d(TAG, "facebook:onError", error)
+        }
+    },
+)
+// ...
+override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+
+    // Pass the activity result back to the Facebook SDK
+    callbackManager.onActivityResult(requestCode, resultCode, data)
+}
+
+En el método onCreate de tu actividad de inicio de sesión, obtén la instancia compartida del objeto FirebaseAuth :
+Kotlin+KTX
+Java
+
+private lateinit var auth: FirebaseAuth
+// ...
+// Initialize Firebase Auth
+auth = Firebase.auth
+
+Al inicializar su Actividad, verifique si el usuario ha iniciado sesión actualmente:
+Kotlin+KTX
+Java
+
+public override fun onStart() {
+    super.onStart()
+    // Check if user is signed in (non-null) and update UI accordingly.
+    val currentUser = auth.currentUser
+    updateUI(currentUser)
+}
+
+Después de que un usuario inicie sesión correctamente, en el método de devolución de llamada onSuccess de LoginButton , obtenga un token de acceso para el usuario que inició sesión, cámbielo por una credencial de Firebase y autentíquese con Firebase usando la credencial de Firebase:
+Kotlin+KTX
+Java
+
+private fun handleFacebookAccessToken(token: AccessToken) {
+    Log.d(TAG, "handleFacebookAccessToken:$token")
+
+    val credential = FacebookAuthProvider.getCredential(token.token)
+    auth.signInWithCredential(credential)
+        .addOnCompleteListener(this) { task ->
+            if (task.isSuccessful) {
+                // Sign in success, update UI with the signed-in user's information
+                Log.d(TAG, "signInWithCredential:success")
+                val user = auth.currentUser
+                updateUI(user)
+            } else {
+                // If sign in fails, display a message to the user.
+                Log.w(TAG, "signInWithCredential:failure", task.exception)
+                Toast.makeText(
+                    baseContext,
+                    "Authentication failed.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                updateUI(null)
+            }
+        }
+}
+
+    Si la llamada a signInWithCredential tiene éxito, puede utilizar el método getCurrentUser para obtener los datos de la cuenta del usuario.
+
+Próximos pasos
+
+Después de que un usuario inicia sesión por primera vez, se crea una nueva cuenta de usuario y se vincula a las credenciales (es decir, el nombre de usuario y la contraseña, el número de teléfono o la información del proveedor de autenticación) con las que el usuario inició sesión. Esta nueva cuenta se almacena como parte de su proyecto de Firebase y se puede usar para identificar a un usuario en cada aplicación de su proyecto, independientemente de cómo inicie sesión el usuario.
+
+    En tus aplicaciones, puedes obtener la información básica del perfil del usuario desde el objeto FirebaseUser . Consulte Administrar usuarios .
+
+    En las reglas de seguridad de Firebase Realtime Database y Cloud Storage, puede obtener el ID de usuario único del usuario que inició sesión a partir de la variable auth y usarlo para controlar a qué datos puede acceder un usuario.
+
+Puede permitir que los usuarios inicien sesión en su aplicación utilizando múltiples proveedores de autenticación vinculando las credenciales del proveedor de autenticación a una cuenta de usuario existente.
+
+Para cerrar la sesión de un usuario, llame signOut : 
+Firebase.auth.signOut()
+
+https://github.com/firebase/snippets-android/blob/36ead7df6890f5888b44097b61ac6eb5f95e5f2f/auth/app/src/main/java/com/google/firebase/quickstart/auth/kotlin/MainActivity.kt#L415-L415
